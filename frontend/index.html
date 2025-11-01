@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sudoku Solver</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Sudoku Solver</h1>
+      <p class="description">
+        Fill in the numbers you already know, then press <strong>Solve</strong>.
+        The backend will compute a solution using Z3 via Deno, Python, and Z3.
+      </p>
+      <div class="grid-container">
+        <section class="grid-wrapper" aria-label="Input Sudoku board">
+          <h2 class="grid-label">Input</h2>
+          <div class="sudoku-grid" id="grid-input" role="application"></div>
+        </section>
+        <section class="grid-wrapper" aria-label="Solution Sudoku board">
+          <h2 class="grid-label">Solution</h2>
+          <div class="sudoku-grid" id="grid-solution" role="region" aria-live="polite"></div>
+        </section>
+      </div>
+      <div class="actions">
+        <button type="button" class="secondary" id="clear">Clear</button>
+        <button type="button" class="primary" id="solve">Solve</button>
+      </div>
+      <div class="status" id="status" aria-live="polite"></div>
+    </main>
+    <noscript>
+      JavaScript is required to interact with the Sudoku grid and solver.
+    </noscript>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
