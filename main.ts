@@ -1,44 +1,5 @@
 import { serveFile } from "jsr:@std/http@1.0.21/file-server";
 import { fromFileUrl, join, normalize } from "jsr:@std/path@1.1.2";
-import { python } from "jsr:@sigma/python@0.4.9";
-
-interface Z3Expr {
-  toString(): string;
-  __eq__(other: Z3Expr): Z3Bool;
-}
-
-interface Z3Bool extends Z3Expr {}
-
-interface Z3Int extends Z3Expr {
-  __ge__(other: Z3Expr): Z3Bool;
-  __le__(other: Z3Expr): Z3Bool;
-}
-
-interface Z3CheckResult {
-  toString(): string;
-}
-
-interface Z3Model {
-  evaluate(expr: Z3Expr): Z3Expr;
-}
-
-interface Z3Solver {
-  add(...constraints: Z3Expr[]): void;
-  check(): Z3CheckResult;
-  model(): Z3Model;
-}
-
-interface Z3 {
-  Int(name: string): Z3Int;
-  IntVal(value: number): Z3Int;
-  Solver(): Z3Solver;
-  Distinct(...args: Z3Expr[]): Z3Bool;
-  And(...args: Z3Bool[]): Z3Bool;
-  Or(...args: Z3Bool[]): Z3Bool;
-  Not(expr: Z3Bool): Z3Bool;
-}
-
-const z3: Z3 = python.import("z3");
 
 Deno.addSignalListener("SIGINT", () => {
   Deno.exit(0);
@@ -48,6 +9,7 @@ const GRID_SIZE = 9;
 const BOARD_SIZE = GRID_SIZE * GRID_SIZE;
 
 const FRONTEND_ROOT = fromFileUrl(new URL("./frontend", import.meta.url));
+const SOLVER_PATH = fromFileUrl(new URL("./solver.ts", import.meta.url));
 
 const PORT = Number(Deno.env.get("PORT") ?? "8000");
 if (!Number.isInteger(PORT) || PORT <= 0) {
@@ -61,6 +23,10 @@ type SolveRequest = {
 type SolveResponse =
   | { solution: number[]; solutionCount: number }
   | { error: string };
+
+type SolverOutput =
+  | { success: true; solution: number[]; solutionCount: number }
+  | { success: false; error: string };
 
 Deno.serve(
   {
@@ -109,12 +75,15 @@ async function handleSolveRequest(req: Request): Promise<Response> {
   }
 
   try {
-    const result = solveSudoku(board);
+    const result = await solveSudokuInProcess(board, req.signal);
     return jsonResponse({
       solution: result.solution,
       solutionCount: result.solutionCount,
     });
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return jsonError("Request was cancelled.", 499);
+    }
     if (error instanceof SudokuUnsolvableError) {
       return jsonError("The provided Sudoku board is unsatisfiable.", 422);
     }
@@ -130,95 +99,71 @@ class SudokuUnsolvableError extends Error {
   }
 }
 
-function solveSudoku(
+async function solveSudokuInProcess(
   board: number[],
-): { solution: number[]; solutionCount: number } {
-  const solver = z3.Solver();
-  const cells: Z3Int[] = [];
+  signal: AbortSignal,
+): Promise<{ solution: number[]; solutionCount: number }> {
+  // Spawn a new Deno process for each solve request
+  const command = new Deno.Command(Deno.execPath(), {
+    args: ["-A", SOLVER_PATH],
+    stdin: "piped",
+    stdout: "piped",
+    stderr: "piped",
+  });
 
-  for (let row = 0; row < GRID_SIZE; row++) {
-    for (let col = 0; col < GRID_SIZE; col++) {
-      const cell = z3.Int(`x_${row}_${col}`);
-      cells.push(cell);
+  const process = command.spawn();
 
-      solver.add(cell.__ge__(z3.IntVal(1)));
-      solver.add(cell.__le__(z3.IntVal(9)));
-
-      const given = board[row * GRID_SIZE + col];
-      if (given !== 0) {
-        solver.add(cell.__eq__(z3.IntVal(given)));
-      }
+  // Set up abort handler to kill the process
+  const abortHandler = () => {
+    try {
+      process.kill("SIGTERM");
+    } catch {
+      // Process may have already exited
     }
+  };
+
+  if (signal.aborted) {
+    abortHandler();
+    throw new DOMException("Request was aborted", "AbortError");
   }
 
-  // Row constraints.
-  for (let row = 0; row < GRID_SIZE; row++) {
-    const rowCells = [];
-    for (let col = 0; col < GRID_SIZE; col++) {
-      rowCells.push(cells[row * GRID_SIZE + col]);
+  signal.addEventListener("abort", abortHandler);
+
+  try {
+    // Write the board to stdin
+    const writer = process.stdin.getWriter();
+    const encoder = new TextEncoder();
+    const input = JSON.stringify({ board });
+    await writer.write(encoder.encode(input));
+    await writer.close();
+
+    // Read the output
+    const { code, stdout, stderr } = await process.output();
+
+    if (signal.aborted) {
+      throw new DOMException("Request was aborted", "AbortError");
     }
-    solver.add(z3.Distinct(...rowCells));
-  }
 
-  // Column constraints.
-  for (let col = 0; col < GRID_SIZE; col++) {
-    const colCells = [];
-    for (let row = 0; row < GRID_SIZE; row++) {
-      colCells.push(cells[row * GRID_SIZE + col]);
+    if (code !== 0) {
+      const stderrText = new TextDecoder().decode(stderr);
+      console.error("Solver process failed:", stderrText);
+      throw new Error(`Solver process exited with code ${code}`);
     }
-    solver.add(z3.Distinct(...colCells));
-  }
 
-  // Subgrid constraints.
-  const BOX_SIZE = 3;
-  for (let boxRow = 0; boxRow < BOX_SIZE; boxRow++) {
-    for (let boxCol = 0; boxCol < BOX_SIZE; boxCol++) {
-      const boxCells = [];
-      for (let row = 0; row < BOX_SIZE; row++) {
-        for (let col = 0; col < BOX_SIZE; col++) {
-          const r = boxRow * BOX_SIZE + row;
-          const c = boxCol * BOX_SIZE + col;
-          boxCells.push(cells[r * GRID_SIZE + c]);
-        }
-      }
-      solver.add(z3.Distinct(...boxCells));
+    const stdoutText = new TextDecoder().decode(stdout);
+    const output = JSON.parse(stdoutText.trim()) as SolverOutput;
+
+    if (!output.success) {
+      throw new SudokuUnsolvableError(output.error);
     }
+
+    return {
+      solution: output.solution,
+      solutionCount: output.solutionCount,
+    };
+  } finally {
+    signal.removeEventListener("abort", abortHandler);
   }
-
-  const result = solver.check();
-  if (result.toString() !== "sat") {
-    throw new SudokuUnsolvableError("Sudoku has no solution.");
-  }
-
-  const model = solver.model();
-  const solution: number[] = [];
-  for (const cell of cells) {
-    const raw = model.evaluate(cell);
-    const value = Number.parseInt(raw.toString(), 10);
-    if (!Number.isFinite(value)) {
-      throw new Error(`Failed to parse solver value: ${raw.toString()}`);
-    }
-    solution.push(value);
-  }
-
-  // Check if there are multiple solutions by blocking the first one
-  const blockConstraints: Z3Bool[] = [];
-  for (let i = 0; i < cells.length; i++) {
-    const cell = cells[i];
-    const value = solution[i];
-    // Create constraint: cell != value
-    const notEqual = z3.Not(cell.__eq__(z3.IntVal(value)));
-    blockConstraints.push(notEqual);
-  }
-
-  // At least one cell must be different (OR of all differences)
-  solver.add(z3.Or(...blockConstraints));
-
-  const nextResult = solver.check();
-  const hasMultipleSolutions = nextResult.toString() === "sat";
-  const solutionCount = hasMultipleSolutions ? 2 : 1; // 2 means "multiple", not exact count
-
-  return { solution, solutionCount };
 }
 
 async function serveStaticAsset(
