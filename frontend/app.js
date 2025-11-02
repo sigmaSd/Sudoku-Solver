@@ -1,6 +1,91 @@
 const GRID_SIZE = 9;
 const SUBGRID_SIZE = 3;
 
+// Initial puzzle to display on page load
+const INITIAL_PUZZLE = [
+  5,
+  3,
+  0,
+  0,
+  7,
+  0,
+  0,
+  0,
+  0,
+  6,
+  0,
+  0,
+  1,
+  9,
+  5,
+  0,
+  0,
+  0,
+  0,
+  9,
+  8,
+  0,
+  0,
+  0,
+  0,
+  6,
+  0,
+  8,
+  0,
+  0,
+  0,
+  6,
+  0,
+  0,
+  0,
+  3,
+  4,
+  0,
+  0,
+  8,
+  0,
+  3,
+  0,
+  0,
+  1,
+  7,
+  0,
+  0,
+  0,
+  2,
+  0,
+  0,
+  0,
+  6,
+  0,
+  6,
+  0,
+  0,
+  0,
+  0,
+  2,
+  8,
+  0,
+  0,
+  0,
+  0,
+  4,
+  1,
+  9,
+  0,
+  0,
+  5,
+  0,
+  0,
+  0,
+  0,
+  8,
+  0,
+  0,
+  7,
+  9,
+];
+
 const gridInputEl = document.getElementById("grid-input");
 const gridSolutionEl = document.getElementById("grid-solution");
 const statusEl = document.getElementById("status");
@@ -322,7 +407,9 @@ async function safeParseError(response) {
 
 inputCells.push(...createGrid(gridInputEl, true));
 solutionCells.push(...createGrid(gridSolutionEl, false));
-clearBoard();
+
+// Load initial puzzle
+writeBoard(INITIAL_PUZZLE, inputCells);
 
 solveBtn.addEventListener("click", solveSudoku);
 clearBtn.addEventListener("click", () => {
