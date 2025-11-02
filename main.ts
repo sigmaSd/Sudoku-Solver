@@ -1,3 +1,4 @@
+/// <reference lib="webworker" />
 import { serveFile } from "jsr:@std/http@1.0.21/file-server";
 import { fromFileUrl, join, normalize } from "jsr:@std/path@1.1.2";
 
@@ -30,9 +31,12 @@ type SolverOutput =
 
 Deno.serve(
   {
-    port: PORT,
+    port: 0,
     onListen: ({ hostname, port }) => {
       console.log(`Sudoku solver listening on http://${hostname}:${port}`);
+      if (isRunningInWorker()) {
+        self.postMessage({ port });
+      }
     },
   },
   async (req: Request): Promise<Response> => {
@@ -207,4 +211,11 @@ function jsonResponse(data: SolveResponse, status = 200): Response {
 
 function jsonError(message: string, status: number): Response {
   return jsonResponse({ error: message }, status);
+}
+
+function isRunningInWorker() {
+  return (
+    typeof DedicatedWorkerGlobalScope !== "undefined" &&
+    self instanceof DedicatedWorkerGlobalScope
+  );
 }
