@@ -1,4 +1,0 @@
-Error
-    at file:///home/mrcool/dev/deno/sus/main3.ts:8:37
-    at callback (ext:deno_web/02_timers.js:87:7)
-    at eventLoopTick (ext:core/01_core.js:214:13)

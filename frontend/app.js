@@ -27,7 +27,8 @@ function createGrid(containerEl, isInput) {
       cell.dataset.row = String(row);
       cell.dataset.col = String(col);
 
-      const subgridAccent = (Math.floor(row / SUBGRID_SIZE) + Math.floor(col / SUBGRID_SIZE)) % 2;
+      const subgridAccent =
+        (Math.floor(row / SUBGRID_SIZE) + Math.floor(col / SUBGRID_SIZE)) % 2;
       cell.dataset.subgridAccent = subgridAccent ? "1" : "0";
 
       const input = document.createElement("input");
@@ -289,7 +290,9 @@ async function solveSudoku() {
       setStatus("Cancelled", null);
     } else {
       setStatus(
-        error instanceof Error ? error.message : "Unexpected error while solving.",
+        error instanceof Error
+          ? error.message
+          : "Unexpected error while solving.",
         "error",
       );
       console.error(error);
