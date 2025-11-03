@@ -1,6 +1,4 @@
 /// <reference lib="webworker" />
-import { serveFile } from "jsr:@std/http@1.0.21/file-server";
-import { fromFileUrl, join, normalize } from "jsr:@std/path@1.1.2";
 
 Deno.addSignalListener("SIGINT", () => {
   Deno.exit(0);
@@ -9,8 +7,8 @@ Deno.addSignalListener("SIGINT", () => {
 const GRID_SIZE = 9;
 const BOARD_SIZE = GRID_SIZE * GRID_SIZE;
 
-const FRONTEND_ROOT = fromFileUrl(new URL("./frontend", import.meta.url));
-const SOLVER_PATH = fromFileUrl(new URL("./solver.ts", import.meta.url));
+const FRONTEND_ROOT = import.meta.resolve("./frontend/");
+const SOLVER_PATH = import.meta.resolve("./solver.ts");
 
 const PORT = Number(Deno.env.get("PORT") ?? "8000");
 if (!Number.isInteger(PORT) || PORT <= 0) {
@@ -46,7 +44,7 @@ Deno.serve(
       return await handleSolveRequest(req);
     }
 
-    return await serveStaticAsset(req, pathname);
+    return await serveStaticAsset(pathname);
   },
 );
 
@@ -171,7 +169,6 @@ async function solveSudokuInProcess(
 }
 
 async function serveStaticAsset(
-  req: Request,
   pathname: string,
 ): Promise<Response> {
   let relativePath = pathname;
@@ -186,14 +183,26 @@ async function serveStaticAsset(
     return new Response("Not found", { status: 404 });
   }
 
-  const filePath = normalize(join(FRONTEND_ROOT, relativePath));
+  const filePath = new URL(relativePath, FRONTEND_ROOT).href;
 
   if (!filePath.startsWith(FRONTEND_ROOT)) {
     return new Response("Not found", { status: 404 });
   }
 
   try {
-    return await serveFile(req, filePath);
+    const resp = await fetch(filePath);
+    return new Response(resp.body, {
+      headers: {
+        "content-type": filePath.endsWith(".html")
+          ? "text/html; charset=utf-8"
+          : filePath.endsWith(".css")
+          ? "text/css"
+          : filePath.endsWith(".js")
+          ? "application/javascript"
+          : resp.headers.get("content-type") || "text/html; charset=utf-8",
+        "cache-control": "no-store",
+      },
+    });
   } catch {
     return new Response("Not found", { status: 404 });
   }
