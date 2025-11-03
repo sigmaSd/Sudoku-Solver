@@ -4,3 +4,14 @@
 
 ## Usage
 
+Run directly:
+
+```
+deno -A https://github.com/sigmaSd/Sudoku-Solver/raw/refs/heads/master/webview.ts
+```
+
+Or compile it:
+
+```
+deno compile --output sudoku-solver -A --include https://github.com/sigmaSd/Sudoku-Solver/raw/refs/heads/oo/main.ts https://github.com/sigmaSd/Sudoku-Solver/raw/refs/heads/oo/webview.ts
+```
